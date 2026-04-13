@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { readAppData } from '@/src/server/appData';
+import { prisma } from '@/src/server/prisma';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
-  const data = await readAppData();
-  return NextResponse.json(data.products);
+  const products = await prisma.product.findMany({
+    orderBy: { createdAt: 'desc' }
+  });
+  return NextResponse.json(products);
 }
-

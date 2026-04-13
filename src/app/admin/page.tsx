@@ -39,10 +39,11 @@ export default function AdminPage() {
 
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [busyItems, setBusyItems] = useState<Record<string, boolean>>({});
 
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState<number>(5000);
-  const [newImageUrl, setNewImageUrl] = useState('/images/laptop.png');
+  const [newImageFile, setNewImageFile] = useState<File | null>(null);
 
   const hasData = useMemo(() => config !== null, [config]);
 
@@ -56,7 +57,6 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    // If cookie already exists, this will succeed and fill data
     loadAll()
       .then(() => setAuthed(true))
       .catch(() => setAuthed(false));
@@ -110,15 +110,35 @@ export default function AdminPage() {
 
   const createProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newImageFile) {
+      setError('Пожалуйста, выберите изображение товара.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const created = await api<Product>('/api/admin/products', {
+      const formData = new FormData();
+      formData.append('name', newName.trim());
+      formData.append('price', String(newPrice));
+      formData.append('image', newImageFile);
+
+      const res = await fetch('/api/admin/products', {
         method: 'POST',
-        body: JSON.stringify({ name: newName.trim(), price: newPrice, imageUrl: newImageUrl.trim() }),
+        body: formData,
       });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(data.error || 'Create failed');
+      }
+
+      const created = await res.json() as Product;
       setProducts(prev => [created, ...prev]);
       setNewName('');
+      setNewImageFile(null);
+      // Reset file input
+      const fileInput = document.getElementById('new-product-image') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Create failed');
     } finally {
@@ -126,16 +146,34 @@ export default function AdminPage() {
     }
   };
 
-  const updateProduct = async (id: string, patch: Partial<Product>) => {
-    setBusy(true);
+  const updateProduct = async (id: string, name: string, price: number, imageFile?: File | null) => {
+    setBusyItems(prev => ({ ...prev, [id]: true }));
     setError(null);
     try {
-      const updated = await api<Product>('/api/admin/products', { method: 'PUT', body: JSON.stringify({ id, ...patch }) });
+      const formData = new FormData();
+      formData.append('id', id);
+      formData.append('name', name.trim());
+      formData.append('price', String(price));
+      if (imageFile) {
+        formData.append('image', imageFile);
+      }
+
+      const res = await fetch('/api/admin/products', {
+        method: 'PUT',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Update failed' }));
+        throw new Error(data.error || 'Update failed');
+      }
+
+      const updated = await res.json() as Product;
       setProducts(prev => prev.map(p => (p.id === id ? updated : p)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed');
     } finally {
-      setBusy(false);
+      setBusyItems(prev => ({ ...prev, [id]: false }));
     }
   };
 
@@ -293,15 +331,19 @@ export default function AdminPage() {
                   placeholder="Цена"
                   className="rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
                 />
-                <input
-                  value={newImageUrl}
-                  onChange={e => setNewImageUrl(e.target.value)}
-                  placeholder="/images/..."
-                  className="rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
-                />
+                <div className="flex flex-col gap-1">
+                  <input
+                    id="new-product-image"
+                    type="file"
+                    accept="image/*"
+                    onChange={e => setNewImageFile(e.target.files?.[0] || null)}
+                    className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-gray-100 file:text-dark hover:file:bg-gray-200"
+                  />
+                  {newImageFile && <span className="text-[10px] text-green-600 px-2 truncate">Выбрано: {newImageFile.name}</span>}
+                </div>
                 <button
                   type="submit"
-                  disabled={busy || !newName.trim()}
+                  disabled={busy || !newName.trim() || !newImageFile}
                   className="md:col-span-4 rounded-xl px-5 py-3 font-bold bg-dark text-white hover:bg-black disabled:opacity-50"
                 >
                   Добавить товар
@@ -311,37 +353,57 @@ export default function AdminPage() {
               <div className="mt-7 space-y-3">
                 {products.map(p => (
                   <div key={p.id} className="rounded-2xl border border-gray-200 p-4 bg-gray-50">
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-                      <input
-                        className="md:col-span-4 rounded-xl border border-gray-300 px-3 py-2 bg-white"
-                        value={p.name}
-                        onChange={e => setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, name: e.target.value } : x)))}
-                      />
-                      <input
-                        type="number"
-                        className="md:col-span-2 rounded-xl border border-gray-300 px-3 py-2 bg-white"
-                        value={p.price}
-                        onChange={e => setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, price: Number(e.target.value) } : x)))}
-                      />
-                      <input
-                        className="md:col-span-4 rounded-xl border border-gray-300 px-3 py-2 bg-white"
-                        value={p.imageUrl}
-                        onChange={e => setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, imageUrl: e.target.value } : x)))}
-                      />
-                      <button
-                        disabled={busy}
-                        onClick={() => updateProduct(p.id, { name: p.name, price: p.price, imageUrl: p.imageUrl })}
-                        className="md:col-span-1 rounded-xl px-3 py-2 font-bold bg-primary text-dark hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-                      >
-                        Ок
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() => deleteProduct(p.id)}
-                        className="md:col-span-1 rounded-xl px-3 py-2 font-bold bg-white border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        Удалить
-                      </button>
+                    <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-gray-200 bg-white flex-shrink-0">
+                        <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 grid grid-cols-1 md:grid-cols-10 gap-3 w-full">
+                        <input
+                          className="md:col-span-4 rounded-xl border border-gray-300 px-3 py-2 bg-white"
+                          value={p.name}
+                          onChange={e => setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, name: e.target.value } : x)))}
+                        />
+                        <input
+                          type="number"
+                          className="md:col-span-2 rounded-xl border border-gray-300 px-3 py-2 bg-white"
+                          value={p.price}
+                          onChange={e => setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, price: Number(e.target.value) } : x)))}
+                        />
+                        <div className="md:col-span-4 flex flex-col gap-1">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                // We store temporary file link to local object and only upload when "Ok" is clicked
+                                // But to simplify, let's just use updateProduct as soon as it's changed or add an "Update" button
+                                // For simplicity here, we'll keep the "Ok" button logic
+                                (p as any)._newFile = file;
+                                setProducts([...products]);
+                              }
+                            }}
+                            className="text-[10px] file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-gray-200 file:text-dark"
+                          />
+                          {(p as any)._newFile && <span className="text-[10px] text-green-600 px-1 truncate">Новое: {(p as any)._newFile.name}</span>}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 w-full md:w-auto">
+                        <button
+                          disabled={busy || busyItems[p.id]}
+                          onClick={() => updateProduct(p.id, p.name, p.price, (p as any)._newFile)}
+                          className="flex-1 rounded-xl px-4 py-2 font-bold bg-primary text-dark hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+                        >
+                          Ок
+                        </button>
+                        <button
+                          disabled={busy || busyItems[p.id]}
+                          onClick={() => deleteProduct(p.id)}
+                          className="flex-1 rounded-xl px-4 py-2 font-bold bg-white border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Удалить
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
-import { readAppData, writeAppData } from "@/src/server/appData";
+import { setTelegramConfig, clearTelegramConfig, getTelegramConfig } from "@/src/server/telegramConfig";
 
 export const runtime = "nodejs";
+
+// ID администратора — укажите ваш Telegram user ID для защиты /connect
+// Получить можно у @userinfobot в Telegram
+const ADMIN_TELEGRAM_ID = process.env.TELEGRAM_ADMIN_ID
+  ? Number(process.env.TELEGRAM_ADMIN_ID)
+  : null;
 
 type TelegramChat = {
   id: number;
@@ -14,6 +20,7 @@ type TelegramChat = {
 
 type TelegramMessage = {
   message_id: number;
+  from?: { id: number };
   chat: TelegramChat;
   text?: string;
 };
@@ -48,7 +55,7 @@ async function sendMessage(chatId: number, text: string): Promise<void> {
 }
 
 export async function POST(req: Request) {
-  // Optional security: set this secret in Vercel and when calling setWebhook(secret_token=...)
+  // Опциональная защита через секретный токен webhook
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (secret) {
     const header = req.headers.get("x-telegram-bot-api-secret-token");
@@ -64,48 +71,49 @@ export async function POST(req: Request) {
 
   if (!chat || !text) return NextResponse.json({ ok: true });
 
+  // /connect — подключить чат для получения заявок
   if (text.startsWith("/connect")) {
-    const data = await readAppData();
-    const next = {
-      ...data,
-      config: {
-        ...data.config,
-        telegramChatId: String(chat.id),
-        telegramChatTitle: chatTitle(chat),
-        telegramChatType: chat.type ?? undefined,
-      },
-    };
-    await writeAppData(next);
+    // Проверка: только администратор может подключать чат
+    if (ADMIN_TELEGRAM_ID && msg?.from?.id !== ADMIN_TELEGRAM_ID) {
+      await sendMessage(chat.id, "⛔ У вас нет прав для выполнения этой команды.");
+      return NextResponse.json({ ok: true });
+    }
 
-    await sendMessage(
-      chat.id,
-      `✅ Подключено.\nТеперь заявки с сайта T Rent будут приходить сюда.\n\nChat ID: ${chat.id}`
-    );
+    try {
+      await setTelegramConfig(String(chat.id), chatTitle(chat), chat.type);
+      await sendMessage(
+        chat.id,
+        `✅ Подключено.\nТеперь заявки с сайта T Rent будут приходить сюда.\n\nChat ID: ${chat.id}`,
+      );
+    } catch {
+      await sendMessage(chat.id, "❌ Ошибка при сохранении в базу данных. Попробуйте снова.");
+    }
+
     return NextResponse.json({ ok: true });
   }
 
+  // /disconnect — отключить чат
   if (text.startsWith("/disconnect")) {
-    const data = await readAppData();
-    const next = {
-      ...data,
-      config: {
-        ...data.config,
-        telegramChatId: undefined,
-        telegramChatTitle: undefined,
-        telegramChatType: undefined,
-      },
-    };
-    await writeAppData(next);
+    if (ADMIN_TELEGRAM_ID && msg?.from?.id !== ADMIN_TELEGRAM_ID) {
+      await sendMessage(chat.id, "⛔ У вас нет прав для выполнения этой команды.");
+      return NextResponse.json({ ok: true });
+    }
 
-    await sendMessage(chat.id, "🧹 Отключено. Заявки больше не будут приходить в этот чат.");
+    try {
+      await clearTelegramConfig();
+      await sendMessage(chat.id, "🧹 Отключено. Заявки больше не будут приходить в этот чат.");
+    } catch {
+      await sendMessage(chat.id, "❌ Ошибка при обновлении базы данных. Попробуйте снова.");
+    }
+
     return NextResponse.json({ ok: true });
   }
 
+  // /status — проверить текущее подключение
   if (text.startsWith("/status")) {
-    const data = await readAppData();
-    const cfg = data.config;
-    const connected = cfg.telegramChatId
-      ? `✅ Подключено\nChat ID: ${cfg.telegramChatId}\nНазвание: ${cfg.telegramChatTitle ?? "—"}\nТип: ${cfg.telegramChatType ?? "—"}`
+    const cfg = await getTelegramConfig();
+    const connected = cfg.chatId
+      ? `✅ Подключено\nChat ID: ${cfg.chatId}\nНазвание: ${cfg.chatTitle ?? "—"}\nТип: ${cfg.chatType ?? "—"}`
       : "❌ Не подключено.\nДобавьте бота в чат и отправьте /connect.";
     await sendMessage(chat.id, connected);
     return NextResponse.json({ ok: true });
@@ -113,4 +121,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true });
 }
-

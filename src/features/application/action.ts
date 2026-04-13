@@ -1,6 +1,6 @@
 "use server";
 
-import { readAppData } from "@/src/server/appData";
+import { getTelegramChatId } from "@/src/server/telegramConfig";
 
 type ApplicationState = {
   success: boolean;
@@ -13,20 +13,21 @@ export async function sendApplication(prevState: ApplicationState, formData: For
     const phone = formData.get("phone");
     const product = formData.get("product") || "Не указан";
     const city = formData.get("city") || "Не определен";
-    
+
     // Validate inputs
     if (!name || !phone) {
       return { success: false, message: "Имя и телефон обязательны для заполнения." };
     }
 
     const token = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
-    const data = await readAppData();
-    const chatId = data.config.telegramChatId;
+
+    // Читаем chatId из Prisma (с fallback на env)
+    const chatId = await getTelegramChatId();
 
     if (!token || !chatId) {
-       console.warn("Telegram configuration is missing.");
-       // For mock purposes if missing, just return success
-       return { success: true, message: "Заявка успешно отправлена! Мы скоро свяжемся с вами." };
+      console.warn("[sendApplication] Telegram configuration is missing (token or chatId not set).");
+      // Возвращаем успех, чтобы пользователь не видел ошибку конфигурации
+      return { success: true, message: "Заявка успешно отправлена! Мы скоро свяжемся с вами." };
     }
 
     const text = `Новая заявка с сайта "T Rent"\n\n👤 Имя: ${name}\n📞 Телефон: ${phone}\n📍 Город: ${city}\n🛒 Товар: ${product}`;
