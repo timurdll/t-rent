@@ -1,9 +1,12 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Section } from '@/src/shared/ui/section';
 import { Typography } from '@/src/shared/ui/typography';
 import { Button } from '@/src/shared/ui/button';
 import { WhatsAppIcon } from '@/src/shared/ui/icons/WhatsAppIcon';
 import { EquipmentModel } from '@/src/entities/equipment/ui/EquipmentModel';
+import { fadeInUp, staggerContainer, transition } from '@/src/shared/lib/animations';
+
 import laptop from '@/public/images/hero/laptop.png';
 import printer from '@/public/images/hero/printer.png';
 import tablet from '@/public/images/hero/tablet.png';
@@ -22,17 +25,31 @@ export function HeroSection({ onRentClick, whatsappHref }: HeroSectionProps) {
       <div className="container relative z-10 w-full flex flex-col md:flex-row items-center">
 
         {/* Left Side: Content */}
-        <div className="flex-1 text-center md:text-left z-20 max-w-2xl">
-          <Typography variant="h1" className="leading-tight mb-9">
-            Аренда техники<br />
-            <span className="text-white">для бизнеса и мероприятий</span>
-          </Typography>
-          <p className="text-gray-400 text-lg md:text-xl font-light mb-14 max-w-lg leading-relaxed">
+        <motion.div 
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="flex-1 text-center md:text-left z-20 max-w-2xl"
+        >
+          <motion.div variants={fadeInUp}>
+            <Typography variant="h1" className="leading-tight mb-9">
+              Аренда техники<br />
+              <span className="text-white">для бизнеса и мероприятий</span>
+            </Typography>
+          </motion.div>
+          
+          <motion.p 
+            variants={fadeInUp}
+            className="text-gray-400 text-lg md:text-xl font-light mb-14 max-w-lg leading-relaxed"
+          >
             Ноутбуки и принтеры премиального класса в аренду
             с доставкой по всему Казахстану.
-          </p>
+          </motion.p>
 
-          <div className="flex flex-col sm:flex-row gap-6 md:gap-7 justify-center md:justify-start">
+          <motion.div 
+            variants={fadeInUp}
+            className="flex flex-col sm:flex-row gap-6 md:gap-7 justify-center md:justify-start"
+          >
             <Button
               size="lg"
               onClick={onRentClick}
@@ -49,11 +66,16 @@ export function HeroSection({ onRentClick, whatsappHref }: HeroSectionProps) {
               <WhatsAppIcon size={20} color="#25D366" />
               Написать в WhatsApp
             </Button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Right Side: Absolute Floating Equipment Group */}
-        <div className="hidden md:block absolute right-[-3.5rem] lg:right-[-1.5rem] top-[46%] -translate-y-1/2 w-[520px] lg:w-[640px] h-[380px] lg:h-[470px] z-10">
+        <motion.div 
+          initial={{ opacity: 0, x: 100, scale: 0.9 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          transition={{ ...transition, delay: 0.4 }}
+          className="hidden md:block absolute right-[-3.5rem] lg:right-[-1.5rem] top-[46%] -translate-y-1/2 w-[520px] lg:w-[640px] h-[380px] lg:h-[470px] z-10"
+        >
           <div className="relative w-full h-full">
 
             {/* Printer (Deepest / Bottom-Left) */}
@@ -86,7 +108,7 @@ export function HeroSection({ onRentClick, whatsappHref }: HeroSectionProps) {
               imageClassName="[filter:drop-shadow(0_22px_44px_rgba(0,0,0,0.6))_drop-shadow(0_0_7px_rgba(255,197,26,0.22))]"
             />
           </div>
-        </div>
+        </motion.div>
       </div>
     </Section>
   );
