@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { upload } from '@vercel/blob/client';
 
 type AppConfig = {
   phone: string;
@@ -117,22 +118,18 @@ export default function AdminPage() {
     setBusy(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append('name', newName.trim());
-      formData.append('price', String(newPrice));
-      formData.append('image', newImageFile);
-
-      const res = await fetch('/api/admin/products', {
-        method: 'POST',
-        body: formData,
+      // 1. Upload image directly to Vercel Blob (no API body limit)
+      const blob = await upload(newImageFile.name, newImageFile, {
+        access: 'public',
+        handleUploadUrl: '/api/admin/upload',
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Upload failed' }));
-        throw new Error(data.error || 'Create failed');
-      }
+      // 2. Save product record with the resulting URL
+      const created = await api<Product>('/api/admin/products', {
+        method: 'POST',
+        body: JSON.stringify({ name: newName.trim(), price: newPrice, imageUrl: blob.url }),
+      });
 
-      const created = await res.json() as Product;
       setProducts(prev => [created, ...prev]);
       setNewName('');
       setNewImageFile(null);
@@ -150,25 +147,22 @@ export default function AdminPage() {
     setBusyItems(prev => ({ ...prev, [id]: true }));
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append('id', id);
-      formData.append('name', name.trim());
-      formData.append('price', String(price));
-      if (imageFile) {
-        formData.append('image', imageFile);
+      let imageUrl: string | undefined;
+
+      // If a new image was selected, upload it directly to Vercel Blob first
+      if (imageFile && imageFile.size > 0) {
+        const blob = await upload(imageFile.name, imageFile, {
+          access: 'public',
+          handleUploadUrl: '/api/admin/upload',
+        });
+        imageUrl = blob.url;
       }
 
-      const res = await fetch('/api/admin/products', {
+      const updated = await api<Product>('/api/admin/products', {
         method: 'PUT',
-        body: formData,
+        body: JSON.stringify({ id, name: name.trim(), price, ...(imageUrl ? { imageUrl } : {}) }),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Update failed' }));
-        throw new Error(data.error || 'Update failed');
-      }
-
-      const updated = await res.json() as Product;
       setProducts(prev => prev.map(p => (p.id === id ? updated : p)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed');

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAdminAuthed } from '@/src/server/adminAuth';
 import { prisma } from '@/src/server/prisma';
-import { put, del } from '@vercel/blob';
+import { del } from '@vercel/blob';
 
 export const runtime = 'nodejs';
 
@@ -17,37 +17,25 @@ export async function POST(req: Request) {
   if (!(await isAdminAuthed())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const formData = await req.formData();
-    const name = formData.get('name') as string;
-    const priceStr = formData.get('price') as string;
-    const imageFile = formData.get('image') as File | null;
+    const body = await req.json() as { name?: string; price?: number; imageUrl?: string };
+    const { name, price: priceRaw, imageUrl } = body;
 
-    if (!name || !priceStr || !imageFile) {
-      return NextResponse.json({ error: 'Missing required fields (name, price, image)' }, { status: 400 });
+    if (!name || priceRaw === undefined || !imageUrl) {
+      return NextResponse.json({ error: 'Missing required fields (name, price, imageUrl)' }, { status: 400 });
     }
 
-    const price = parseFloat(priceStr);
+    const price = parseFloat(String(priceRaw));
     if (isNaN(price)) {
       return NextResponse.json({ error: 'Invalid price' }, { status: 400 });
     }
 
-    // 1. Upload image to Vercel Blob
-    const blob = await put(`products/${Date.now()}-${imageFile.name}`, imageFile, {
-      access: 'public',
-    });
-
-    // 2. Save to database
     const product = await prisma.product.create({
-      data: {
-        name,
-        price,
-        imageUrl: blob.url,
-      },
+      data: { name, price, imageUrl },
     });
 
     return NextResponse.json(product, { status: 201 });
   } catch (error: any) {
-    console.error('Failed to create product. Full error:', error);
+    console.error('Failed to create product:', error);
     return NextResponse.json({ error: error?.message || 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -56,28 +44,16 @@ export async function PUT(req: Request) {
   if (!(await isAdminAuthed())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const formData = await req.formData();
-    const id = formData.get('id') as string;
-    const name = formData.get('name') as string;
-    const priceStr = formData.get('price') as string;
-    const imageFile = formData.get('image') as File | null;
+    const body = await req.json() as { id?: string; name?: string; price?: number; imageUrl?: string };
+    const { id, name, price: priceRaw, imageUrl: newImageUrl } = body;
 
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const existingProduct = await prisma.product.findUnique({ where: { id } });
     if (!existingProduct) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    let imageUrl = existingProduct.imageUrl;
-
-    // If new image provided, upload it and delete the old one
-    if (imageFile && imageFile.size > 0) {
-      // 1. Upload new image
-      const blob = await put(`products/${Date.now()}-${imageFile.name}`, imageFile, {
-        access: 'public',
-      });
-      imageUrl = blob.url;
-
-      // 2. Delete old image from Blob if it's a Vercel Blob URL
+    // If a new image URL was provided and it differs from the old one, delete the old blob
+    if (newImageUrl && newImageUrl !== existingProduct.imageUrl) {
       if (existingProduct.imageUrl.includes('public.blob.vercel-storage.com')) {
         await del(existingProduct.imageUrl).catch(err => console.error('Failed to delete old blob:', err));
       }
@@ -87,8 +63,8 @@ export async function PUT(req: Request) {
       where: { id },
       data: {
         name: name ?? existingProduct.name,
-        price: priceStr ? parseFloat(priceStr) : existingProduct.price,
-        imageUrl,
+        price: priceRaw !== undefined ? parseFloat(String(priceRaw)) : existingProduct.price,
+        imageUrl: newImageUrl ?? existingProduct.imageUrl,
       },
     });
 
